@@ -29,6 +29,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import Header from "@/components/Header";
 import ActivityCalendar from "@/components/profile/ActivityCalendar";
 import Timeline from "@/components/profile/Timeline";
 import NFTBadges from "@/components/profile/NFTBadges";
@@ -186,21 +187,14 @@ export default function ProfilePage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
       {/* Header */}
-      <header className="sticky top-0 z-40 border-b border-slate-800 bg-slate-900/80 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
-          <Link href="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
-            <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-blue-500 to-purple-500 text-white grid place-items-center text-sm font-bold">
-              B
-            </div>
-            <div className="font-semibold tracking-tight text-slate-100">Base Camp</div>
-            <Badge variant="secondary" className="ml-2 bg-slate-700 text-slate-300">beta</Badge>
-          </Link>
+      <Header
+        rightContent={
           <Button variant="outline" size="sm" className="border-slate-700 hover:bg-slate-700 rounded-xl">
             <User className="h-4 w-4 mr-2" />
             프로필 편집
           </Button>
-        </div>
-      </header>
+        }
+      />
 
       <div className="mx-auto max-w-7xl px-4 py-6">
         {/* Profile Header */}

@@ -1,7 +1,8 @@
 "use client"
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   ArrowLeft,
@@ -18,12 +19,17 @@ import {
   Wallet,
   Copy,
   Check,
+  Upload,
+  File,
+  Loader2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
+import Header from "@/components/Header";
+import { useWallet } from "@/contexts/WalletContext";
 import {
   Select,
   SelectContent,
@@ -45,21 +51,34 @@ const categories = [
   { value: "security-news", label: "보안 > 보안 뉴스" },
 ];
 
+interface UploadedFile {
+  id: string;
+  file: File;
+  preview?: string;
+  type: "image" | "file";
+}
+
 export default function WritePostPage() {
+  const router = useRouter();
+  const { wallet } = useWallet();
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [category, setCategory] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
-  const [contractAddress, setContractAddress] = useState("0x" + "0".repeat(40));
+  const [donationAddress, setDonationAddress] = useState("");
   const [copied, setCopied] = useState(false);
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
 
-  // 게시글 작성 시 컨트랙트 주소 생성 (실제로는 스마트 컨트랙트 배포)
-  React.useEffect(() => {
-    // 데모용 랜덤 주소 생성
-    const randomAddr = "0x" + Array.from({ length: 40 }, () => Math.floor(Math.random() * 16).toString(16)).join("");
-    setContractAddress(randomAddr);
-  }, []);
+  // 지갑 주소를 후원 계좌로 자동 설정
+  useEffect(() => {
+    if (wallet?.address) {
+      setDonationAddress(wallet.address);
+    }
+  }, [wallet]);
 
   const addTag = () => {
     if (tagInput.trim() && !tags.includes(tagInput.trim())) {
@@ -73,29 +92,156 @@ export default function WritePostPage() {
   };
 
   const copyAddress = () => {
-    navigator.clipboard.writeText(contractAddress);
+    navigator.clipboard.writeText(donationAddress);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleSubmit = () => {
-    // 게시글 작성 로직
-    console.log({ title, content, category, tags, contractAddress });
-    // 실제로는 API 호출
+  // 이미지 업로드 처리
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    Array.from(files).forEach((file) => {
+      if (file.type.startsWith("image/")) {
+        const id = Math.random().toString(36).substring(7);
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setUploadedFiles((prev) => [
+            ...prev,
+            {
+              id,
+              file,
+              preview: reader.result as string,
+              type: "image",
+            },
+          ]);
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+  };
+
+  // 파일 업로드 처리
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    Array.from(files).forEach((file) => {
+      const id = Math.random().toString(36).substring(7);
+      setUploadedFiles((prev) => [
+        ...prev,
+        {
+          id,
+          file,
+          type: "file",
+        },
+      ]);
+    });
+  };
+
+  // 파일 삭제
+  const removeFile = (id: string) => {
+    setUploadedFiles((prev) => {
+      const file = prev.find((f) => f.id === id);
+      if (file?.preview) {
+        URL.revokeObjectURL(file.preview);
+      }
+      return prev.filter((f) => f.id !== id);
+    });
+  };
+
+  // 이미지를 마크다운에 삽입
+  const insertImageToContent = (imageUrl: string) => {
+    const imageMarkdown = `\n![이미지](${imageUrl})\n`;
+    setContent((prev) => prev + imageMarkdown);
+  };
+
+  // 게시글 저장
+  const handleSubmit = async () => {
+    if (!title.trim() || !content.trim() || !category) {
+      return;
+    }
+
+    if (!wallet?.address) {
+      alert("지갑을 연결해주세요.");
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      // 업로드된 파일들을 Base64로 변환 (실제로는 IPFS나 스토리지 서비스에 업로드)
+      const fileData = await Promise.all(
+        uploadedFiles.map(async (uploadedFile) => {
+          if (uploadedFile.type === "image" && uploadedFile.preview) {
+            return {
+              id: uploadedFile.id,
+              name: uploadedFile.file.name,
+              type: uploadedFile.type,
+              data: uploadedFile.preview, // Base64 데이터
+            };
+          } else {
+            const reader = new FileReader();
+            return new Promise<any>((resolve) => {
+              reader.onloadend = () => {
+                resolve({
+                  id: uploadedFile.id,
+                  name: uploadedFile.file.name,
+                  type: uploadedFile.type,
+                  data: reader.result,
+                  size: uploadedFile.file.size,
+                });
+              };
+              reader.readAsDataURL(uploadedFile.file);
+            });
+          }
+        })
+      );
+
+      // 게시글 데이터 생성
+      const newPost = {
+        id: Date.now(),
+        title: title.trim(),
+        content: content.trim(),
+        category,
+        tags,
+        author: wallet.address.slice(0, 6) + "..." + wallet.address.slice(-4),
+        authorAddress: wallet.address,
+        donationAddress,
+        date: new Date().toISOString().split("T")[0],
+        likes: 0,
+        dislikes: 0,
+        comments: 0,
+        views: 0,
+        files: fileData,
+        contractAddress: donationAddress, // 후원 계좌를 컨트랙트 주소로 사용
+      };
+
+      // 로컬 스토리지에 저장
+      const existingPosts = JSON.parse(
+        localStorage.getItem("board_posts") || "[]"
+      );
+      existingPosts.unshift(newPost);
+      localStorage.setItem("board_posts", JSON.stringify(existingPosts));
+
+      // 게시판 페이지로 이동
+      router.push("/board/free");
+    } catch (error) {
+      console.error("게시글 작성 실패:", error);
+      alert("게시글 작성에 실패했습니다. 다시 시도해주세요.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
       {/* Header */}
-      <header className="sticky top-0 z-40 border-b border-slate-800 bg-slate-900/80 backdrop-blur">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
-          <Link href="/board/free" className="flex items-center gap-2 hover:opacity-80 transition-opacity text-slate-300">
-            <ArrowLeft className="h-5 w-5" />
-            <span className="font-semibold">자유게시판</span>
-          </Link>
-          <Badge variant="secondary">베타</Badge>
-        </div>
-      </header>
+      <Header
+        showBackButton={true}
+        backHref="/board/free"
+      />
 
       <div className="mx-auto max-w-5xl px-4 py-8">
         <motion.div
@@ -194,23 +340,25 @@ export default function WritePostPage() {
                   </div>
                 </div>
 
-                {/* Contract Address (후원 계좌) */}
+                {/* Donation Address (후원 계좌) */}
                 <div>
                   <label className="text-sm font-medium text-slate-300 mb-2 block flex items-center gap-2">
                     <Wallet className="h-4 w-4" />
-                    후원 계좌 (컨트랙트 주소)
+                    후원 계좌 (지갑 주소)
                   </label>
                   <div className="flex items-center gap-2">
                     <Input
-                      value={contractAddress}
-                      readOnly
-                      className="font-mono text-sm border-slate-700 bg-slate-900/50 text-slate-300"
+                      value={donationAddress}
+                      onChange={(e) => setDonationAddress(e.target.value)}
+                      placeholder={wallet?.address || "지갑을 연결해주세요"}
+                      className="font-mono text-sm border-slate-700 bg-slate-900/50 text-slate-100"
                     />
                     <Button
                       onClick={copyAddress}
                       variant="outline"
                       size="icon"
                       className="border-slate-700 hover:bg-slate-700"
+                      disabled={!donationAddress}
                     >
                       {copied ? (
                         <Check className="h-4 w-4 text-green-400" />
@@ -220,7 +368,9 @@ export default function WritePostPage() {
                     </Button>
                   </div>
                   <p className="text-xs text-slate-500 mt-1">
-                    게시글 작성 시 자동으로 생성되는 고유 컨트랙트 주소입니다.
+                    {wallet?.address
+                      ? "연결된 지갑 주소가 자동으로 입력됩니다. 수정 가능합니다."
+                      : "지갑을 연결하면 주소가 자동으로 입력됩니다."}
                   </p>
                 </div>
               </div>
@@ -233,34 +383,127 @@ export default function WritePostPage() {
               <div className="flex items-center justify-between">
                 <CardTitle className="text-lg text-slate-100">내용</CardTitle>
                 <div className="flex items-center gap-2">
-                  <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-slate-700">
-                    <Bold className="h-4 w-4" />
-                  </Button>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-slate-700">
-                    <Italic className="h-4 w-4" />
-                  </Button>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-slate-700">
-                    <List className="h-4 w-4" />
-                  </Button>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-slate-700">
-                    <Code className="h-4 w-4" />
-                  </Button>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-slate-700">
+                  <input
+                    ref={imageInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={handleImageUpload}
+                    className="hidden"
+                  />
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    multiple
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 hover:bg-slate-700"
+                    onClick={() => imageInputRef.current?.click()}
+                    title="이미지 업로드"
+                  >
                     <ImageIcon className="h-4 w-4" />
                   </Button>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-slate-700">
-                    <LinkIcon className="h-4 w-4" />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 hover:bg-slate-700"
+                    onClick={() => fileInputRef.current?.click()}
+                    title="파일 첨부"
+                  >
+                    <Upload className="h-4 w-4" />
+                  </Button>
+                  <div className="h-6 w-px bg-slate-700" />
+                  <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-slate-700" title="굵게">
+                    <Bold className="h-4 w-4" />
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-slate-700" title="기울임">
+                    <Italic className="h-4 w-4" />
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-slate-700" title="목록">
+                    <List className="h-4 w-4" />
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-slate-700" title="코드">
+                    <Code className="h-4 w-4" />
                   </Button>
                 </div>
               </div>
             </CardHeader>
             <CardContent className="p-0">
-              <Textarea
-                placeholder="게시글 내용을 작성하세요...&#10;&#10;마크다운 문법을 지원합니다."
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                className="min-h-[400px] border-0 resize-none focus:ring-0 text-base leading-relaxed p-6 bg-slate-900/30 text-slate-100 placeholder:text-slate-500"
-              />
+              <div className="relative">
+                <Textarea
+                  placeholder="게시글 내용을 작성하세요...&#10;&#10;마크다운 문법을 지원합니다."
+                  value={content}
+                  onChange={(e) => setContent(e.target.value)}
+                  className="min-h-[400px] border-0 resize-none focus:ring-0 text-base leading-relaxed p-6 bg-slate-900/30 text-slate-100 placeholder:text-slate-500"
+                />
+                {/* 업로드된 파일 미리보기 */}
+                {uploadedFiles.length > 0 && (
+                  <div className="border-t border-slate-700 p-4 bg-slate-900/50">
+                    <div className="flex flex-wrap gap-3">
+                      {uploadedFiles.map((uploadedFile) => (
+                        <div
+                          key={uploadedFile.id}
+                          className="relative group border border-slate-700 rounded-lg overflow-hidden bg-slate-800"
+                        >
+                          {uploadedFile.type === "image" && uploadedFile.preview ? (
+                            <div className="relative">
+                              <img
+                                src={uploadedFile.preview}
+                                alt={uploadedFile.file.name}
+                                className="w-32 h-32 object-cover"
+                              />
+                              <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={() =>
+                                    insertImageToContent(uploadedFile.preview!)
+                                  }
+                                  className="h-8 text-xs"
+                                >
+                                  삽입
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  onClick={() => removeFile(uploadedFile.id)}
+                                  className="h-8 w-8 p-0"
+                                >
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="p-4 flex items-center gap-2 min-w-[200px]">
+                              <File className="h-8 w-8 text-slate-400" />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm text-slate-200 truncate">
+                                  {uploadedFile.file.name}
+                                </p>
+                                <p className="text-xs text-slate-500">
+                                  {(uploadedFile.file.size / 1024).toFixed(2)} KB
+                                </p>
+                              </div>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => removeFile(uploadedFile.id)}
+                                className="h-8 w-8 p-0 hover:bg-red-500/20"
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             </CardContent>
           </Card>
 
@@ -276,11 +519,26 @@ export default function WritePostPage() {
               </Link>
               <Button
                 onClick={handleSubmit}
-                disabled={!title.trim() || !content.trim() || !category}
-                className="bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 gap-2 px-6 rounded-xl"
+                disabled={
+                  !title.trim() ||
+                  !content.trim() ||
+                  !category ||
+                  !wallet?.address ||
+                  isSubmitting
+                }
+                className="bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 gap-2 px-6 rounded-xl disabled:opacity-50"
               >
-                <Send className="h-4 w-4" />
-                게시하기
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    작성 중...
+                  </>
+                ) : (
+                  <>
+                    <Send className="h-4 w-4" />
+                    게시하기
+                  </>
+                )}
               </Button>
             </div>
           </div>

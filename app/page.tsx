@@ -36,6 +36,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import Header from "@/components/Header";
 import {
   LineChart,
   Line,
@@ -113,7 +114,6 @@ function useCoinbasePrice() {
 
 // --- Layout Component ---
 export default function BaseCampHome() {
-  const [loggedIn, setLoggedIn] = useState(true);
   const [username] = useState("hosung");
   const [expandedBoards, setExpandedBoards] = useState<Record<string, boolean>>({
     finance: false,
@@ -130,43 +130,7 @@ export default function BaseCampHome() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-100">
       {/* Top Nav */}
-      <header className="sticky top-0 z-40 border-b border-slate-800 bg-slate-900/80 backdrop-blur">
-          <div className="mx-auto flex max-w-[1400px] items-center justify-between px-6 py-3">
-            <div className="flex items-center gap-3">
-              <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-blue-500 to-purple-500 text-white grid place-items-center text-sm font-bold">B</div>
-              <div className="font-semibold tracking-tight text-slate-100">Base Camp</div>
-              <Badge variant="secondary" className="ml-2 bg-slate-700 text-slate-300">beta</Badge>
-            </div>
-            <div className="hidden items-center gap-2 md:flex">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 opacity-60 text-slate-400" />
-                <Input placeholder="검색: 공지, 게시물, 사용자…" className="pl-9 w-72 border-slate-700 bg-slate-800/50 text-slate-100 placeholder:text-slate-500 rounded-xl" />
-              </div>
-              <Button variant="ghost" size="icon" aria-label="알림" className="hover:bg-slate-700 rounded-xl">
-                <Bell className="h-5 w-5 text-slate-300" />
-              </Button>
-              <Button variant="ghost" size="icon" aria-label="설정" className="hover:bg-slate-700 rounded-xl">
-                <Settings className="h-5 w-5 text-slate-300" />
-              </Button>
-              {loggedIn ? (
-                <>
-                  <Link href="/profile">
-                    <Button variant="outline" className="gap-2 border-slate-700 hover:bg-slate-700 rounded-xl">
-                      <User className="h-4 w-4" /> 내 프로필
-                    </Button>
-                  </Link>
-                  <Button onClick={() => setLoggedIn(false)} variant="outline" className="gap-2 border-slate-700 hover:bg-slate-700 rounded-xl">
-                    <LogOut className="h-4 w-4" /> 로그아웃
-                  </Button>
-                </>
-              ) : (
-                <Button onClick={() => setLoggedIn(true)} className="gap-2 rounded-xl">
-                  <LogIn className="h-4 w-4" /> 로그인
-                </Button>
-              )}
-            </div>
-          </div>
-      </header>
+      <Header />
 
       {/* Main */}
       <div className="mx-auto grid max-w-[1400px] grid-cols-1 gap-4 px-6 py-6 md:grid-cols-12">
@@ -289,25 +253,19 @@ export default function BaseCampHome() {
               <CardContent className="flex flex-col gap-4 p-6 md:flex-row md:items-center md:justify-between">
                 <div>
                   <h1 className="text-2xl font-bold text-slate-100">
-                    {loggedIn ? (
-                      <>안녕하세요, <span className="text-blue-400">{username}</span> 님 👋</>
-                    ) : (
-                      <>Base Camp에 오신 것을 환영합니다</>
-                    )}
+                    Base Camp에 오신 것을 환영합니다
                   </h1>
                   <p className="text-sm text-slate-400 mt-1">
                     Base 커뮤니티의 모든 것을 한 화면에서 만나보세요
                   </p>
                 </div>
-                {loggedIn && (
-                  <div className="flex items-center gap-2">
-                    <Link href="/board/free/write">
-                      <Button className="gap-2 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 rounded-xl">
-                        <FileText className="h-4 w-4" /> 게시글 작성
-                      </Button>
-                    </Link>
-                  </div>
-                )}
+                <div className="flex items-center gap-2">
+                  <Link href="/board/free/write">
+                    <Button className="gap-2 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 rounded-xl">
+                      <FileText className="h-4 w-4" /> 게시글 작성
+                    </Button>
+                  </Link>
+                </div>
               </CardContent>
             </Card>
           </motion.div>
@@ -447,9 +405,6 @@ export default function BaseCampHome() {
                         <div className="flex-1">
                           <div className="flex items-center gap-2">
                             <span className="font-medium text-sm text-slate-200">{r.user}</span>
-                            {r.user === username && (
-                              <Badge variant="secondary" className="text-xs bg-purple-500/30 text-purple-300">나</Badge>
-                            )}
                           </div>
                           <div className="text-xs text-slate-500">
                             Level {r.level} · {r.xp.toLocaleString()} XP

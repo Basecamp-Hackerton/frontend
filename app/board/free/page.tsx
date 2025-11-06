@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import {
@@ -18,11 +18,22 @@ import {
   Wallet,
   Copy,
   Check,
+  ChevronLeft,
+  ChevronRight,
+  X,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import Header from "@/components/Header";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 const demoPosts = [
   {
@@ -34,6 +45,7 @@ const demoPosts = [
     dislikes: 3,
     comments: 42,
     views: 1234,
+    category: "가이드",
     tags: ["가이드", "튜토리얼"],
     contractAddress: "0x1234567890123456789012345678901234567890",
     userVote: null as "up" | "down" | null,
@@ -47,6 +59,7 @@ const demoPosts = [
     dislikes: 1,
     comments: 12,
     views: 234,
+    category: "게임",
     tags: ["게임", "Frame"],
     contractAddress: "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd",
     userVote: null,
@@ -60,6 +73,7 @@ const demoPosts = [
     dislikes: 0,
     comments: 8,
     views: 189,
+    category: "개발",
     tags: ["개발", "ERC-1155"],
     contractAddress: "0x9876543210987654321098765432109876543210",
     userVote: null,
@@ -73,19 +87,152 @@ const demoPosts = [
     dislikes: 2,
     comments: 15,
     views: 312,
+    category: "기술",
     tags: ["최적화", "가스"],
     contractAddress: "0xfedcba0987654321fedcba0987654321fedcba09",
     userVote: null,
   },
 ];
 
+type SortOption = "latest" | "popular" | "views" | "comments";
+type FilterOption = "all" | string;
+
 export default function FreeBoardPage() {
   const [searchQuery, setSearchQuery] = useState("");
-  const [posts, setPosts] = useState(demoPosts);
+  // 서버와 클라이언트에서 동일한 초기값 사용 (하이드레이션 오류 방지)
+  const [allPosts, setAllPosts] = useState(demoPosts);
+  const [mounted, setMounted] = useState(false);
   const [copiedId, setCopiedId] = useState<number | null>(null);
+  const [sortBy, setSortBy] = useState<SortOption>("latest");
+  const [selectedCategory, setSelectedCategory] = useState<FilterOption>("all");
+  const [selectedTag, setSelectedTag] = useState<FilterOption>("all");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [postsPerPage] = useState(10);
 
-  const handleVote = (postId: number, voteType: "up" | "down") => {
-    setPosts((prev) =>
+  // 모든 태그 추출 (필터링용)
+  const allTags = useMemo(() => {
+    const tags = new Set<string>();
+    allPosts.forEach((post) => {
+      if (post.tags) {
+        post.tags.forEach((tag: string) => tags.add(tag));
+      }
+    });
+    return Array.from(tags).sort();
+  }, [allPosts]);
+
+  // 모든 카테고리 추출 (필터링용)
+  const allCategories = useMemo(() => {
+    const categories = new Set<string>();
+    allPosts.forEach((post) => {
+      if (post.category) {
+        categories.add(post.category);
+      }
+    });
+    return Array.from(categories).sort();
+  }, [allPosts]);
+
+  // 클라이언트에서만 실행 (하이드레이션 오류 방지)
+  useEffect(() => {
+    setMounted(true);
+    
+    const loadPosts = () => {
+      const savedPosts = localStorage.getItem("board_posts");
+      let loadedPosts = [...demoPosts];
+
+      if (savedPosts) {
+        const parsed = JSON.parse(savedPosts);
+        loadedPosts = [...parsed, ...demoPosts];
+      }
+
+      // 각 게시물의 투표 상태 불러오기
+      loadedPosts = loadedPosts.map((post) => {
+        const voteKey = `post_${post.id}_vote`;
+        const savedVote = localStorage.getItem(voteKey);
+        return {
+          ...post,
+          userVote: (savedVote === "up" || savedVote === "down" ? savedVote : null) as "up" | "down" | null,
+        };
+      });
+
+      setAllPosts(loadedPosts);
+    };
+
+    // 초기 로드 시에도 확인
+    loadPosts();
+
+    const handleFocus = () => {
+      loadPosts();
+    };
+
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, []);
+
+  // 필터링 및 정렬된 게시물
+  const filteredAndSortedPosts = useMemo(() => {
+    let filtered = [...allPosts];
+
+    // 검색 필터
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter((post) => {
+        const titleMatch = post.title.toLowerCase().includes(query);
+        const authorMatch = post.author.toLowerCase().includes(query);
+        const tagMatch = post.tags?.some((tag: string) => tag.toLowerCase().includes(query));
+        const contentMatch = (post as any).content?.toLowerCase().includes(query);
+        return titleMatch || authorMatch || tagMatch || contentMatch;
+      });
+    }
+
+    // 카테고리 필터
+    if (selectedCategory !== "all") {
+      filtered = filtered.filter((post) => post.category === selectedCategory);
+    }
+
+    // 태그 필터
+    if (selectedTag !== "all") {
+      filtered = filtered.filter((post) => post.tags?.includes(selectedTag));
+    }
+
+    // 정렬
+    filtered.sort((a, b) => {
+      switch (sortBy) {
+        case "popular":
+          const scoreA = a.likes - a.dislikes;
+          const scoreB = b.likes - b.dislikes;
+          return scoreB - scoreA;
+        case "views":
+          return b.views - a.views;
+        case "comments":
+          return b.comments - a.comments;
+        case "latest":
+        default:
+          // 날짜 기준 정렬 (최신순)
+          const dateA = new Date(a.date).getTime();
+          const dateB = new Date(b.date).getTime();
+          return dateB - dateA;
+      }
+    });
+
+    return filtered;
+  }, [allPosts, searchQuery, selectedCategory, selectedTag, sortBy]);
+
+  // 페이징
+  const totalPages = Math.ceil(filteredAndSortedPosts.length / postsPerPage);
+  const startIndex = (currentPage - 1) * postsPerPage;
+  const endIndex = startIndex + postsPerPage;
+  const currentPosts = filteredAndSortedPosts.slice(startIndex, endIndex);
+
+  // 검색/필터 변경 시 첫 페이지로 이동
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedCategory, selectedTag, sortBy]);
+
+  const handleVote = (e: React.MouseEvent, postId: number, voteType: "up" | "down") => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    setAllPosts((prev) =>
       prev.map((post) => {
         if (post.id === postId) {
           const currentVote = post.userVote;
@@ -106,6 +253,26 @@ export default function FreeBoardPage() {
             else newDislikes++;
           }
 
+          // localStorage에 투표 저장
+          const voteKey = `post_${postId}_vote`;
+          if (newVote) {
+            localStorage.setItem(voteKey, newVote);
+          } else {
+            localStorage.removeItem(voteKey);
+          }
+
+          // localStorage에 저장된 게시물이면 업데이트
+          const savedPosts = localStorage.getItem("board_posts");
+          if (savedPosts) {
+            const parsed = JSON.parse(savedPosts);
+            const index = parsed.findIndex((p: any) => p.id === postId);
+            if (index !== -1) {
+              parsed[index].likes = newLikes;
+              parsed[index].dislikes = newDislikes;
+              localStorage.setItem("board_posts", JSON.stringify(parsed));
+            }
+          }
+
           return { ...post, likes: newLikes, dislikes: newDislikes, userVote: newVote };
         }
         return post;
@@ -122,22 +289,17 @@ export default function FreeBoardPage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
       {/* Header */}
-      <header className="sticky top-0 z-40 border-b border-slate-800 bg-slate-900/80 backdrop-blur">
-        <div className="mx-auto flex max-w-[1400px] items-center justify-between px-6 py-3">
-          <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity text-slate-300">
-            <ArrowLeft className="h-5 w-5" />
-            <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-blue-500 to-purple-500 text-white grid place-items-center text-sm font-bold">B</div>
-            <div className="font-semibold tracking-tight text-slate-100">Base Camp</div>
+      <Header
+        showBackButton={true}
+        backHref="/"
+        rightContent={
+          <Link href="/board/free/write">
+            <Button className="gap-2 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 rounded-xl">
+              <Plus className="h-4 w-4" /> 게시글 작성
+            </Button>
           </Link>
-          <div className="flex items-center gap-2">
-            <Link href="/board/free/write">
-              <Button className="gap-2 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 rounded-xl">
-                <Plus className="h-4 w-4" /> 게시글 작성
-              </Button>
-            </Link>
-          </div>
-        </div>
-      </header>
+        }
+      />
 
       <div className="mx-auto max-w-[1400px] px-6 py-6">
         {/* Page Header */}
@@ -159,170 +321,357 @@ export default function FreeBoardPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="mb-4"
+          className="mb-4 space-y-3"
         >
+          {/* 검색 바 */}
           <Card className="border border-slate-700 bg-slate-800/50 backdrop-blur">
             <CardContent className="p-3">
               <div className="flex flex-col md:flex-row gap-3">
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 opacity-60 text-slate-400" />
                   <Input
-                    placeholder="게시글 검색..."
+                    placeholder="제목, 내용, 작성자, 태그로 검색..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="pl-9 border-slate-700 bg-slate-900/50 text-slate-100 placeholder:text-slate-500"
                   />
+                  {searchQuery && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
+                      onClick={() => setSearchQuery("")}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  )}
                 </div>
                 <div className="flex gap-2">
-                  <Button variant="outline" className="gap-2 border-slate-700 hover:bg-slate-700 rounded-xl">
-                    <Filter className="h-4 w-4" /> 필터
+                  <Button
+                    variant={sortBy === "latest" ? "default" : "outline"}
+                    className={`gap-2 border-slate-700 rounded-xl ${
+                      sortBy === "latest"
+                        ? "bg-blue-500 hover:bg-blue-600"
+                        : "hover:bg-slate-700"
+                    }`}
+                    onClick={() => setSortBy("latest")}
+                  >
+                    <Clock className="h-4 w-4" /> 최신순
                   </Button>
-                  <Button variant="outline" className="gap-2 border-slate-700 hover:bg-slate-700 rounded-xl">
+                  <Button
+                    variant={sortBy === "popular" ? "default" : "outline"}
+                    className={`gap-2 border-slate-700 rounded-xl ${
+                      sortBy === "popular"
+                        ? "bg-blue-500 hover:bg-blue-600"
+                        : "hover:bg-slate-700"
+                    }`}
+                    onClick={() => setSortBy("popular")}
+                  >
                     <TrendingUp className="h-4 w-4" /> 인기순
                   </Button>
-                  <Button variant="outline" className="gap-2 border-slate-700 hover:bg-slate-700 rounded-xl">
-                    <Clock className="h-4 w-4" /> 최신순
+                  <Button
+                    variant={sortBy === "views" ? "default" : "outline"}
+                    className={`gap-2 border-slate-700 rounded-xl ${
+                      sortBy === "views"
+                        ? "bg-blue-500 hover:bg-blue-600"
+                        : "hover:bg-slate-700"
+                    }`}
+                    onClick={() => setSortBy("views")}
+                  >
+                    <Eye className="h-4 w-4" /> 조회수
+                  </Button>
+                  <Button
+                    variant={sortBy === "comments" ? "default" : "outline"}
+                    className={`gap-2 border-slate-700 rounded-xl ${
+                      sortBy === "comments"
+                        ? "bg-blue-500 hover:bg-blue-600"
+                        : "hover:bg-slate-700"
+                    }`}
+                    onClick={() => setSortBy("comments")}
+                  >
+                    <MessageSquare className="h-4 w-4" /> 댓글수
                   </Button>
                 </div>
               </div>
             </CardContent>
           </Card>
+
+          {/* 필터 바 */}
+          <Card className="border border-slate-700 bg-slate-800/50 backdrop-blur">
+            <CardContent className="p-3">
+              <div className="flex flex-col md:flex-row gap-3">
+                <div className="flex items-center gap-2">
+                  <Filter className="h-4 w-4 text-slate-400" />
+                  <span className="text-sm text-slate-400">필터:</span>
+                </div>
+                <div className="flex-1 flex flex-wrap gap-2">
+                  {/* 카테고리 필터 */}
+                  {allCategories.length > 0 && (
+                    <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                      <SelectTrigger className="w-[180px] h-9 border-slate-700 bg-slate-900/50 text-slate-100">
+                        <SelectValue placeholder="카테고리" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-slate-800 border-slate-700">
+                        <SelectItem value="all" className="text-slate-100">
+                          전체 카테고리
+                        </SelectItem>
+                        {allCategories.map((category) => (
+                          <SelectItem key={category} value={category} className="text-slate-100">
+                            {category}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+
+                  {/* 태그 필터 */}
+                  {allTags.length > 0 && (
+                    <Select value={selectedTag} onValueChange={setSelectedTag}>
+                      <SelectTrigger className="w-[180px] h-9 border-slate-700 bg-slate-900/50 text-slate-100">
+                        <SelectValue placeholder="태그" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-slate-800 border-slate-700">
+                        <SelectItem value="all" className="text-slate-100">
+                          전체 태그
+                        </SelectItem>
+                        {allTags.map((tag) => (
+                          <SelectItem key={tag} value={tag} className="text-slate-100">
+                            #{tag}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+
+                  {/* 필터 초기화 */}
+                  {(selectedCategory !== "all" || selectedTag !== "all") && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-2 border-slate-700 hover:bg-slate-700"
+                      onClick={() => {
+                        setSelectedCategory("all");
+                        setSelectedTag("all");
+                      }}
+                    >
+                      <X className="h-3 w-3" /> 필터 초기화
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* 검색 결과 정보 */}
+          {(searchQuery || selectedCategory !== "all" || selectedTag !== "all") && (
+            <div className="text-sm text-slate-400 px-1">
+              검색 결과: <span className="text-slate-200 font-semibold">{filteredAndSortedPosts.length}</span>개의 게시물
+            </div>
+          )}
         </motion.div>
 
         {/* Posts List - 더 컴팩트하게 */}
         <div className="space-y-2">
-          {posts.map((post, index) => (
-            <Link key={post.id} href={`/board/free/${post.id}`}>
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.1 + index * 0.05 }}
-              >
-                <Card className="hover:shadow-xl transition-all cursor-pointer border-l-4 border-l-blue-500 border-slate-700 bg-slate-800/50 backdrop-blur">
-                <CardContent className="p-4">
-                  <div className="flex items-start gap-4">
-                    {/* Vote Buttons */}
-                    <div className="flex flex-col items-center gap-1 pt-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className={`h-8 w-8 rounded-lg ${
-                          post.userVote === "up"
-                            ? "bg-blue-500/20 text-blue-400 hover:bg-blue-500/30"
-                            : "hover:bg-slate-700"
-                        }`}
-                        onClick={() => handleVote(post.id, "up")}
-                      >
-                        <ThumbsUp className="h-4 w-4" />
-                      </Button>
-                      <span className="text-sm font-semibold text-slate-300 min-w-[2rem] text-center">
-                        {post.likes - post.dislikes}
-                      </span>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className={`h-8 w-8 rounded-lg ${
-                          post.userVote === "down"
-                            ? "bg-red-500/20 text-red-400 hover:bg-red-500/30"
-                            : "hover:bg-slate-700"
-                        }`}
-                        onClick={() => handleVote(post.id, "down")}
-                      >
-                        <ThumbsDown className="h-4 w-4" />
-                      </Button>
-                    </div>
-
-                    {/* Author Avatar */}
-                    <div className="flex-shrink-0 pt-1">
-                      <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 p-0.5">
-                        <div className="h-full w-full rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold text-slate-300">
-                          {post.author.charAt(0).toUpperCase()}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Post Content */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-4 mb-2">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-2">
-                            <h3 className="text-base font-semibold hover:text-blue-400 transition-colors text-slate-100">
-                              {post.title}
-                            </h3>
-                            {index === 0 && (
-                              <Badge className="bg-gradient-to-r from-orange-500 to-red-500 text-xs rounded-lg">
-                                <TrendingUp className="h-3 w-3 mr-1" /> 인기
-                              </Badge>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-3 text-xs text-slate-400 mb-3">
-                            <span>by @{post.author}</span>
-                            <span>•</span>
-                            <span>{post.date}</span>
-                          </div>
-                        </div>
-
-                        {/* Contract Address - 오른쪽에 작게 */}
-                        <div className="flex-shrink-0 flex items-center gap-1.5 px-2 py-1 bg-slate-900/50 rounded-lg border border-slate-700">
-                          <Wallet className="h-3 w-3 text-slate-500" />
-                          <span className="text-xs font-mono text-slate-400 max-w-[120px] truncate">
-                            {post.contractAddress.slice(0, 6)}...{post.contractAddress.slice(-4)}
+          {currentPosts.length === 0 ? (
+            <Card className="border border-slate-700 bg-slate-800/50 backdrop-blur">
+              <CardContent className="p-12 text-center">
+                <Search className="h-12 w-12 mx-auto mb-4 text-slate-500 opacity-50" />
+                <p className="text-slate-400 text-lg">검색 결과가 없습니다.</p>
+                <p className="text-slate-500 text-sm mt-2">
+                  다른 검색어나 필터를 시도해보세요.
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            currentPosts.map((post, index) => (
+              <Link key={post.id} href={`/board/free/${post.id}`}>
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.1 + index * 0.05 }}
+                >
+                  <Card className="hover:shadow-xl transition-all cursor-pointer border-l-4 border-l-blue-500 border-slate-700 bg-slate-800/50 backdrop-blur">
+                    <CardContent className="p-4">
+                      <div className="flex items-start gap-4">
+                        {/* Vote Buttons */}
+                        <div className="flex flex-col items-center gap-1 pt-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className={`h-8 w-8 rounded-lg ${
+                              post.userVote === "up"
+                                ? "bg-blue-500/20 text-blue-400 hover:bg-blue-500/30"
+                                : "hover:bg-slate-700"
+                            }`}
+                            onClick={(e) => handleVote(e, post.id, "up")}
+                            suppressHydrationWarning
+                          >
+                            <ThumbsUp className="h-4 w-4" />
+                          </Button>
+                          <span className="text-sm font-semibold text-slate-300 min-w-[2rem] text-center" suppressHydrationWarning>
+                            {mounted ? post.likes - post.dislikes : 0}
                           </span>
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-5 w-5 hover:bg-slate-700"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              copyAddress(post.contractAddress, post.id);
-                            }}
+                            className={`h-8 w-8 rounded-lg ${
+                              post.userVote === "down"
+                                ? "bg-red-500/20 text-red-400 hover:bg-red-500/30"
+                                : "hover:bg-slate-700"
+                            }`}
+                            onClick={(e) => handleVote(e, post.id, "down")}
+                            suppressHydrationWarning
                           >
-                            {copiedId === post.id ? (
-                              <Check className="h-3 w-3 text-green-400" />
-                            ) : (
-                              <Copy className="h-3 w-3 text-slate-400" />
-                            )}
+                            <ThumbsDown className="h-4 w-4" />
                           </Button>
                         </div>
-                      </div>
 
-                      {/* Stats & Tags */}
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-4 text-xs text-slate-500">
-                          <span className="flex items-center gap-1">
-                            <MessageSquare className="h-3 w-3" /> {post.comments}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <Eye className="h-3 w-3" /> {post.views}
-                          </span>
+                        {/* Author Avatar */}
+                        <div className="flex-shrink-0 pt-1">
+                          <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 p-0.5">
+                            <div className="h-full w-full rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold text-slate-300">
+                              {post.author.charAt(0).toUpperCase()}
+                            </div>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          {post.tags.map((tag) => (
-                            <Badge key={tag} variant="secondary" className="text-xs bg-slate-700 text-slate-300 rounded-lg">
-                              #{tag}
-                            </Badge>
-                          ))}
+
+                        {/* Post Content */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start justify-between gap-4 mb-2">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-2">
+                                <h3 className="text-base font-semibold hover:text-blue-400 transition-colors text-slate-100">
+                                  {post.title}
+                                </h3>
+                                {(post.likes - post.dislikes) > 50 && (
+                                  <Badge className="bg-gradient-to-r from-orange-500 to-red-500 text-xs rounded-lg">
+                                    <TrendingUp className="h-3 w-3 mr-1" /> 인기
+                                  </Badge>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-3 text-xs text-slate-400 mb-3">
+                                <span>by @{post.author}</span>
+                                <span>•</span>
+                                <span>{post.date}</span>
+                              </div>
+                            </div>
+
+                            {/* Contract Address - 오른쪽에 작게 */}
+                            <div className="flex-shrink-0 flex items-center gap-1.5 px-2 py-1 bg-slate-900/50 rounded-lg border border-slate-700">
+                              <Wallet className="h-3 w-3 text-slate-500" />
+                              <span className="text-xs font-mono text-slate-400 max-w-[120px] truncate">
+                                {(post.contractAddress || (post as any).donationAddress || "").slice(0, 6)}...{(post.contractAddress || (post as any).donationAddress || "").slice(-4)}
+                              </span>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-5 w-5 hover:bg-slate-700"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  copyAddress(post.contractAddress || (post as any).donationAddress || "", post.id);
+                                }}
+                              >
+                                {copiedId === post.id ? (
+                                  <Check className="h-3 w-3 text-green-400" />
+                                ) : (
+                                  <Copy className="h-3 w-3 text-slate-400" />
+                                )}
+                              </Button>
+                            </div>
+                          </div>
+
+                          {/* Stats & Tags */}
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-4 text-xs text-slate-500">
+                              <span className="flex items-center gap-1" suppressHydrationWarning>
+                                <MessageSquare className="h-3 w-3" /> {post.comments}
+                              </span>
+                              <span className="flex items-center gap-1" suppressHydrationWarning>
+                                <Eye className="h-3 w-3" /> {post.views}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {post.tags?.map((tag: string) => (
+                                <Badge key={tag} variant="secondary" className="text-xs bg-slate-700 text-slate-300 rounded-lg">
+                                  #{tag}
+                                </Badge>
+                              ))}
+                            </div>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-              </motion.div>
-            </Link>
-          ))}
+                    </CardContent>
+                  </Card>
+                </motion.div>
+              </Link>
+            ))
+          )}
         </div>
 
-        {/* Pagination */}
-        <div className="mt-6 flex justify-center">
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" className="border-slate-700 hover:bg-slate-700 rounded-xl">이전</Button>
-            <Button variant="default" size="sm" className="rounded-xl">1</Button>
-            <Button variant="outline" size="sm" className="border-slate-700 hover:bg-slate-700 rounded-xl">2</Button>
-            <Button variant="outline" size="sm" className="border-slate-700 hover:bg-slate-700 rounded-xl">3</Button>
-            <Button variant="outline" size="sm" className="border-slate-700 hover:bg-slate-700 rounded-xl">다음</Button>
-          </div>
-        </div>
+        {/* 페이징 */}
+        {totalPages > 1 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+            className="mt-6 flex items-center justify-center gap-2"
+          >
+            <Button
+              variant="outline"
+              size="icon"
+              className="border-slate-700 hover:bg-slate-700"
+              onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+              disabled={currentPage === 1}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+
+            <div className="flex items-center gap-1">
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                let pageNum: number;
+                if (totalPages <= 5) {
+                  pageNum = i + 1;
+                } else if (currentPage <= 3) {
+                  pageNum = i + 1;
+                } else if (currentPage >= totalPages - 2) {
+                  pageNum = totalPages - 4 + i;
+                } else {
+                  pageNum = currentPage - 2 + i;
+                }
+
+                return (
+                  <Button
+                    key={pageNum}
+                    variant={currentPage === pageNum ? "default" : "outline"}
+                    size="sm"
+                    className={`min-w-[2.5rem] border-slate-700 ${
+                      currentPage === pageNum
+                        ? "bg-blue-500 hover:bg-blue-600"
+                        : "hover:bg-slate-700"
+                    }`}
+                    onClick={() => setCurrentPage(pageNum)}
+                  >
+                    {pageNum}
+                  </Button>
+                );
+              })}
+            </div>
+
+            <Button
+              variant="outline"
+              size="icon"
+              className="border-slate-700 hover:bg-slate-700"
+              onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+              disabled={currentPage === totalPages}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+
+            <span className="text-sm text-slate-400 ml-4">
+              {startIndex + 1}-{Math.min(endIndex, filteredAndSortedPosts.length)} / {filteredAndSortedPosts.length}
+            </span>
+          </motion.div>
+        )}
       </div>
     </div>
   );

@@ -8,6 +8,7 @@ Base 생태계를 위한 온체인 커뮤니티 허브입니다. 사용자는 EO
 
 - Node.js 18.x 이상
 - npm 또는 yarn
+- MetaMask 브라우저 확장 프로그램 (지갑 연결용)
 
 ### 설치 및 실행
 
@@ -46,7 +47,11 @@ base_hackerthon/
 │       ├── badge.tsx
 │       └── separator.tsx
 ├── lib/
-│   └── utils.ts         # 유틸리티 함수
+│   ├── utils.ts         # 유틸리티 함수
+│   ├── wallet.ts        # 지갑 연결 유틸리티
+│   └── contracts.ts     # 컨트랙트 주소 설정
+├── components/
+│   └── WalletConnect.tsx # 지갑 연결 컴포넌트
 └── package.json
 ```
 
@@ -59,6 +64,7 @@ base_hackerthon/
 - **shadcn/ui** - UI 컴포넌트
 - **Recharts** - 차트 라이브러리
 - **Lucide React** - 아이콘
+- **ethers.js** - 이더리움 지갑 연결
 
 ## 📝 주요 기능
 
@@ -68,10 +74,19 @@ base_hackerthon/
 - ✅ Base 시세 차트 (데모)
 - ✅ 주요 링크 모음
 - ✅ 반응형 디자인
+- ✅ **지갑 연결 기능 (MetaMask)**
+- ✅ **Base 네트워크 자동 전환**
+
+## 🔗 지갑 연결 사용법
+
+1. MetaMask 브라우저 확장 프로그램 설치
+2. 상단 네비게이션 바의 "지갑 연결" 버튼 클릭
+3. MetaMask에서 연결 승인
+4. Base Sepolia 테스트넷으로 자동 전환 (필요시)
+5. 연결된 지갑 주소가 화면에 표시됩니다
 
 ## 🎯 다음 단계
 
-- [ ] 지갑 연결 기능 (Web3)
 - [ ] 온체인 게시글 작성/조회
 - [ ] 경험치 및 Developer Level 시스템
 - [ ] NFT 보상 시스템
