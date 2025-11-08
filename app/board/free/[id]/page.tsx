@@ -60,10 +60,10 @@ Base는 Coinbase가 개발한 Ethereum Layer 2 솔루션으로, 낮은 가스비
 
 Base는 Optimism의 OP Stack을 기반으로 구축된 Layer 2 네트워크입니다. 주요 특징은 다음과 같습니다:
 
-- **낮은 가스비**: Ethereum 메인넷 대비 최대 10배 저렴한 거래 수수료
-- **빠른 속도**: 평균 2초 이내의 블록 생성 시간
-- **EVM 호환성**: 기존 Ethereum 도구와 완벽 호환
-- **안전성**: Ethereum 메인넷의 보안을 상속
+- 낮은 가스비: Ethereum 메인넷 대비 최대 10배 저렴한 거래 수수료
+- 빠른 속도: 평균 2초 이내의 블록 생성 시간
+- EVM 호환성: 기존 Ethereum 도구와 완벽 호환
+- 안전성: Ethereum 메인넷의 보안을 상속
 
 ## 2. Base 시작하기
 
@@ -100,10 +100,10 @@ const baseSepolia = {
 
 Base 생태계에는 다양한 DeFi, NFT, 게임 프로토콜이 있습니다:
 
-- **Uniswap**: 탈중앙화 거래소
-- **Aave**: 대출 및 차입 프로토콜
-- **Friend.tech**: 소셜 토큰 플랫폼
-- **Base Name Service**: 도메인 서비스
+- Uniswap: 탈중앙화 거래소
+- Aave: 대출 및 차입 프로토콜
+- Friend.tech: 소셜 토큰 플랫폼
+- Base Name Service: 도메인 서비스
 
 ## 4. 개발자 리소스
 

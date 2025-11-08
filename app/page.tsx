@@ -74,9 +74,6 @@ const microChatMock = [
   { avatar: "G9", user: "Guest_92958", time: "12:32", message: "Base 안쓰면 흑우지? ㅋㅋ" },
   { avatar: "G7", user: "Guest_776d2", time: "12:31", message: "내가 쓴 Base 글 한 번 봐주세요 https://medium.com/@adamboudj/coinbases-base-future-of-layer-2-solutions-cab52563c6b9" },
   { avatar: "G3", user: "Guest_3e4a5", time: "12:31", message: "아 배고프다 밥줘" },
-  // { avatar: "G3", user: "Guest_3e4a5", time: "12:30", message: "아" },
-  // { avatar: "G7", user: "Guest_7bdc1", time: "12:30", message: "저메추 부탁. 저메추 부탁. 저메추 부탁. 저메추 부탁. 저메추 부탁." },
-  // { avatar: "G0", user: "Guest_00a22", time: "12:29", message: "ㅇㅅㅇㅅㅎ" },
 ];
 
 // --- Layout Component ---
