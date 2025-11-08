@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useMemo } from "react";
+import { ethers } from "ethers";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import {
@@ -27,6 +28,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import Header from "@/components/Header";
+import { useWallet } from "@/contexts/WalletContext";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -35,7 +45,32 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-const demoPosts = [
+interface BoardPost {
+  id: number;
+  title: string;
+  author: string;
+  date: string;
+  likes: number;
+  dislikes: number;
+  comments: number;
+  views: number;
+  category?: string;
+  tags?: string[];
+  contractAddress?: string;
+  donationAddress?: string;
+  userVote?: "up" | "down" | null;
+  authorAddress?: string;
+  content?: string;
+  files?: Array<{
+    id: string;
+    name: string;
+    type: string;
+    data: string;
+    size?: number;
+  }>;
+}
+
+const demoPosts: BoardPost[] = [
   {
     id: 1,
     title: "Base 생태계 완전 정복 가이드",
@@ -48,6 +83,7 @@ const demoPosts = [
     category: "가이드",
     tags: ["가이드", "튜토리얼"],
     contractAddress: "0x1234567890123456789012345678901234567890",
+    donationAddress: "0x1234567890123456789012345678901234567890",
     userVote: null as "up" | "down" | null,
   },
   {
@@ -62,6 +98,7 @@ const demoPosts = [
     category: "게임",
     tags: ["게임", "Frame"],
     contractAddress: "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+    donationAddress: "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd",
     userVote: null,
   },
   {
@@ -76,6 +113,7 @@ const demoPosts = [
     category: "개발",
     tags: ["개발", "ERC-1155"],
     contractAddress: "0x9876543210987654321098765432109876543210",
+    donationAddress: "0x9876543210987654321098765432109876543210",
     userVote: null,
   },
   {
@@ -90,6 +128,7 @@ const demoPosts = [
     category: "기술",
     tags: ["최적화", "가스"],
     contractAddress: "0xfedcba0987654321fedcba0987654321fedcba09",
+    donationAddress: "0xfedcba0987654321fedcba0987654321fedcba09",
     userVote: null,
   },
 ];
@@ -98,9 +137,10 @@ type SortOption = "latest" | "popular" | "views" | "comments";
 type FilterOption = "all" | string;
 
 export default function FreeBoardPage() {
+  const { wallet, isConnected } = useWallet();
   const [searchQuery, setSearchQuery] = useState("");
   // 서버와 클라이언트에서 동일한 초기값 사용 (하이드레이션 오류 방지)
-  const [allPosts, setAllPosts] = useState(demoPosts);
+  const [allPosts, setAllPosts] = useState<BoardPost[]>(demoPosts);
   const [mounted, setMounted] = useState(false);
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [sortBy, setSortBy] = useState<SortOption>("latest");
@@ -108,6 +148,123 @@ export default function FreeBoardPage() {
   const [selectedTag, setSelectedTag] = useState<FilterOption>("all");
   const [currentPage, setCurrentPage] = useState(1);
   const [postsPerPage] = useState(10);
+  const [donationDialogOpen, setDonationDialogOpen] = useState(false);
+  const [selectedPost, setSelectedPost] = useState<BoardPost | null>(null);
+  const [donationAmount, setDonationAmount] = useState("0.01");
+  const [isDonating, setIsDonating] = useState(false);
+  const [donationFeedback, setDonationFeedback] = useState<{
+    error?: string;
+    message?: string;
+    txHash?: string;
+  }>({});
+
+  const resetDonationState = () => {
+    setDonationDialogOpen(false);
+    setSelectedPost(null);
+    setDonationAmount("0.01");
+    setIsDonating(false);
+    setDonationFeedback({});
+  };
+
+  const handleDonationDialogToggle = (open: boolean) => {
+    if (!open) {
+      resetDonationState();
+    } else {
+      setDonationDialogOpen(true);
+    }
+  };
+
+  const handleOpenDonation = (
+    event: React.MouseEvent,
+    post: BoardPost
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const donationAddress = post.donationAddress || post.contractAddress;
+    if (!donationAddress) {
+      setDonationFeedback({
+        error: "후원 주소가 제공되지 않은 게시글입니다.",
+      });
+      setSelectedPost(post);
+      setDonationDialogOpen(true);
+      return;
+    }
+    setSelectedPost(post);
+    setDonationAmount("0.01");
+    setDonationFeedback({});
+    setDonationDialogOpen(true);
+  };
+
+  const handleDonate = async () => {
+    if (!selectedPost) return;
+    const donationAddress =
+      selectedPost.donationAddress || selectedPost.contractAddress;
+
+    if (!donationAddress) {
+      setDonationFeedback({
+        error: "후원 주소가 제공되지 않았습니다.",
+      });
+      return;
+    }
+
+    if (!wallet?.signer) {
+      setDonationFeedback({
+        error: "후원하려면 먼저 지갑을 연결해주세요.",
+      });
+      return;
+    }
+
+    let value: bigint;
+    try {
+      const parsedAmount = donationAmount.trim();
+      if (!parsedAmount) {
+        throw new Error("금액을 입력해주세요.");
+      }
+      value = ethers.parseEther(parsedAmount);
+      if (value <= BigInt(0)) {
+        throw new Error("0보다 큰 금액을 입력해주세요.");
+      }
+    } catch (error: any) {
+      setDonationFeedback({
+        error:
+          error?.message ||
+          "올바른 ETH 금액을 입력했는지 확인해주세요.",
+      });
+      return;
+    }
+
+    setIsDonating(true);
+    setDonationFeedback({});
+
+    try {
+      const tx = await wallet.signer.sendTransaction({
+        to: donationAddress,
+        value,
+      });
+
+      setDonationFeedback({
+        message: "후원이 전송되었습니다. 트랜잭션 완료를 기다려주세요.",
+        txHash: tx.hash,
+      });
+
+      await tx.wait();
+
+      setDonationFeedback({
+        message: "후원이 성공적으로 완료되었습니다!",
+        txHash: tx.hash,
+      });
+    } catch (error: any) {
+      console.error("Donation failed:", error);
+      setDonationFeedback({
+        error:
+          error?.reason ||
+          error?.message ||
+          "후원 트랜잭션이 실패했습니다. 다시 시도해주세요.",
+      });
+    } finally {
+      setIsDonating(false);
+    }
+  };
 
   // 모든 태그 추출 (필터링용)
   const allTags = useMemo(() => {
@@ -137,10 +294,10 @@ export default function FreeBoardPage() {
     
     const loadPosts = () => {
       const savedPosts = localStorage.getItem("board_posts");
-      let loadedPosts = [...demoPosts];
+      let loadedPosts: BoardPost[] = [...demoPosts];
 
       if (savedPosts) {
-        const parsed = JSON.parse(savedPosts);
+        const parsed: BoardPost[] = JSON.parse(savedPosts);
         loadedPosts = [...parsed, ...demoPosts];
       }
 
@@ -287,42 +444,43 @@ export default function FreeBoardPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
-      {/* Header */}
-      <Header
-        showBackButton={true}
-        backHref="/"
-        rightContent={
-          <Link href="/board/free/write">
-            <Button className="gap-2 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 rounded-xl">
-              <Plus className="h-4 w-4" /> 게시글 작성
-            </Button>
-          </Link>
-        }
-      />
+    <>
+      <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
+        {/* Header */}
+        <Header
+          showBackButton={true}
+          backHref="/"
+          rightContent={
+            <Link href="/board/free/write">
+              <Button className="gap-2 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 rounded-xl">
+                <Plus className="h-4 w-4" /> 게시글 작성
+              </Button>
+            </Link>
+          }
+        />
 
-      <div className="mx-auto max-w-[1400px] px-6 py-6">
-        {/* Page Header */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mb-4"
-        >
-          <Card className="border border-slate-700 bg-slate-800/50 backdrop-blur shadow-xl">
-            <CardContent className="p-4">
-              <h1 className="text-2xl font-bold mb-1 text-slate-100">자유게시판</h1>
-              <p className="text-slate-400 text-sm">Base 생태계에 대한 모든 것을 자유롭게 이야기해보세요</p>
-            </CardContent>
-          </Card>
-        </motion.div>
+        <div className="mx-auto max-w-[1400px] px-6 py-6">
+          {/* Page Header */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-4"
+          >
+            <Card className="border border-slate-700 bg-slate-800/50 backdrop-blur shadow-xl">
+              <CardContent className="p-4">
+                <h1 className="text-2xl font-bold mb-1 text-slate-100">자유게시판</h1>
+                <p className="text-slate-400 text-sm">Base 생태계에 대한 모든 것을 자유롭게 이야기해보세요</p>
+              </CardContent>
+            </Card>
+          </motion.div>
 
-        {/* Search & Filter */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="mb-4 space-y-3"
-        >
+          {/* Search & Filter */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="mb-4 space-y-3"
+          >
           {/* 검색 바 */}
           <Card className="border border-slate-700 bg-slate-800/50 backdrop-blur">
             <CardContent className="p-3">
@@ -537,6 +695,23 @@ export default function FreeBoardPage() {
 
                         {/* Post Content */}
                         <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-3 text-xs text-slate-500">
+                              <span className="flex items-center gap-1" suppressHydrationWarning>
+                                <MessageSquare className="h-3 w-3" /> {post.comments}
+                              </span>
+                              <span className="flex items-center gap-1" suppressHydrationWarning>
+                                <Eye className="h-3 w-3" /> {post.views}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              {post.tags?.map((tag: string) => (
+                                <Badge key={tag} variant="secondary" className="text-xs bg-slate-700 text-slate-300 rounded-lg">
+                                  #{tag}
+                                </Badge>
+                              ))}
+                            </div>
+                          </div>
                           <div className="flex items-start justify-between gap-4 mb-2">
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 mb-2">
@@ -580,23 +755,22 @@ export default function FreeBoardPage() {
                             </div>
                           </div>
 
-                          {/* Stats & Tags */}
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-4 text-xs text-slate-500">
-                              <span className="flex items-center gap-1" suppressHydrationWarning>
-                                <MessageSquare className="h-3 w-3" /> {post.comments}
-                              </span>
-                              <span className="flex items-center gap-1" suppressHydrationWarning>
-                                <Eye className="h-3 w-3" /> {post.views}
-                              </span>
+                          <div className="mt-4 flex items-center justify-between">
+                            <div className="text-xs text-slate-500 font-mono truncate max-w-[60%]">
+                              {(post.donationAddress || post.contractAddress)
+                                ? `후원 계좌: ${(post.donationAddress || post.contractAddress)!.slice(0, 6)}...${(post.donationAddress || post.contractAddress)!.slice(-4)}`
+                                : "후원 계좌가 등록되지 않았습니다."}
                             </div>
-                            <div className="flex items-center gap-2">
-                              {post.tags?.map((tag: string) => (
-                                <Badge key={tag} variant="secondary" className="text-xs bg-slate-700 text-slate-300 rounded-lg">
-                                  #{tag}
-                                </Badge>
-                              ))}
-                            </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="gap-2 border-emerald-400 text-emerald-300 hover:bg-emerald-500/20 rounded-xl"
+                              onClick={(event) => handleOpenDonation(event, post)}
+                              disabled={!post.donationAddress && !post.contractAddress}
+                            >
+                              <Heart className="h-3 w-3" />
+                              후원하기
+                            </Button>
                           </div>
                         </div>
                       </div>
@@ -672,7 +846,101 @@ export default function FreeBoardPage() {
             </span>
           </motion.div>
         )}
+        </div>
       </div>
-    </div>
+
+      <Dialog open={donationDialogOpen} onOpenChange={handleDonationDialogToggle}>
+        <DialogContent className="bg-slate-900 border border-slate-700 text-slate-100">
+          <DialogHeader>
+            <DialogTitle>후원하기</DialogTitle>
+            <DialogDescription className="text-slate-400">
+              선택한 게시글 작성자에게 ETH로 후원할 수 있어요. 트랜잭션 수수료가 발생할 수 있습니다.
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedPost ? (
+            <div className="space-y-4">
+              <div className="rounded-lg border border-slate-700 bg-slate-800/60 p-3">
+                <p className="text-sm text-slate-300">
+                  <span className="font-semibold text-slate-100">{selectedPost.title}</span> 작성자에게 후원합니다.
+                </p>
+                <p className="mt-2 text-xs font-mono text-slate-500 break-all">
+                  {selectedPost.donationAddress || selectedPost.contractAddress}
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-slate-200">후원 금액 (ETH)</p>
+                <Input
+                  value={donationAmount}
+                  onChange={(event) => setDonationAmount(event.target.value)}
+                  placeholder="0.01"
+                  className="bg-slate-950 border-slate-700 text-slate-100"
+                  disabled={isDonating}
+                />
+                <div className="flex items-center gap-2">
+                  {["0.01", "0.05", "0.1"].map((amount) => (
+                    <Button
+                      key={amount}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="border-slate-700 hover:bg-slate-800"
+                      onClick={() => setDonationAmount(amount)}
+                      disabled={isDonating}
+                    >
+                      {amount} ETH
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
+              {!isConnected && (
+                <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+                  후원하려면 먼저 지갑을 연결해주세요.
+                </div>
+              )}
+
+              {donationFeedback.error && (
+                <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+                  {donationFeedback.error}
+                </div>
+              )}
+
+              {donationFeedback.message && (
+                <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200 space-y-1">
+                  <p>{donationFeedback.message}</p>
+                  {donationFeedback.txHash && (
+                    <p className="break-all font-mono text-xs text-emerald-300">
+                      Tx Hash: {donationFeedback.txHash}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-slate-400">게시글 정보를 불러오는 중입니다...</p>
+          )}
+
+          <DialogFooter className="pt-4">
+            <Button
+              variant="outline"
+              className="border-slate-700 hover:bg-slate-800"
+              onClick={resetDonationState}
+              disabled={isDonating}
+            >
+              취소
+            </Button>
+            <Button
+              className="bg-emerald-500 hover:bg-emerald-600"
+              onClick={handleDonate}
+              disabled={isDonating || !selectedPost || !isConnected}
+            >
+              {isDonating ? "후원 전송 중..." : "후원 보내기"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { LogIn, LogOut, Wallet, AlertCircle } from "lucide-react";
-import { connectWallet, disconnectWallet, getCurrentWallet, formatAddress, switchToBaseNetwork, switchToLocalNetwork, WalletState } from "@/lib/wallet";
+import { connectWallet, disconnectWallet, getCurrentWallet, formatAddress, switchToBaseNetwork, WalletState } from "@/lib/wallet";
 import { getWalletProvider } from "@/lib/wallets";
 import WalletSelectModal from "./WalletSelectModal";
 import { useWallet } from "@/contexts/WalletContext";
@@ -18,7 +18,6 @@ export default function WalletConnect({ onConnect, onDisconnect }: WalletConnect
   const { wallet, setWallet } = useWallet();
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [useLocalNetwork, setUseLocalNetwork] = useState(true);
   const [showWalletModal, setShowWalletModal] = useState(false);
   const [selectedWalletId, setSelectedWalletId] = useState<string | null>(null);
 
@@ -84,17 +83,11 @@ export default function WalletConnect({ onConnect, onDisconnect }: WalletConnect
         throw new Error("선택한 지갑이 설치되어 있지 않습니다.");
       }
 
-      // 네트워크 전환 (로컬 네트워크가 기본값)
+      // 네트워크 전환 (Base Sepolia 기본)
       try {
-        if (useLocalNetwork) {
-          console.log("로컬 네트워크로 전환 시도...");
-          await switchToLocalNetwork(provider);
-          console.log("로컬 네트워크로 전환 성공");
-        } else {
-          console.log("Base Sepolia 네트워크로 전환 시도...");
-          await switchToBaseNetwork(provider);
-          console.log("Base Sepolia 네트워크로 전환 성공");
-        }
+        console.log("Base Sepolia 네트워크로 전환 시도...");
+        await switchToBaseNetwork(provider);
+        console.log("Base Sepolia 네트워크로 전환 성공");
       } catch (networkError: any) {
         console.error("네트워크 전환 오류:", networkError);
         // 네트워크 전환 실패해도 계속 진행 (이미 올바른 네트워크일 수 있음)

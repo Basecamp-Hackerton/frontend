@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState, useEffect } from "react";
+import { ethers } from "ethers";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
@@ -15,6 +16,7 @@ import {
   Wallet,
   Copy,
   Check,
+  Heart,
   Calendar,
   User,
   Clock,
@@ -26,6 +28,16 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import Header from "@/components/Header";
+import { Input } from "@/components/ui/input";
+import { useWallet } from "@/contexts/WalletContext";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 // Demo posts (게시판과 동일)
 const demoPosts = [
@@ -181,6 +193,7 @@ interface Post {
 
 export default function PostDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter();
+  const { wallet, isConnected } = useWallet();
   const [post, setPost] = useState<Post | null>(null);
   const [userVote, setUserVote] = useState<"up" | "down" | null>(null);
   const [likes, setLikes] = useState(0);
@@ -190,6 +203,113 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
   const [copied, setCopied] = useState(false);
   const [bookmarked, setBookmarked] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [donationDialogOpen, setDonationDialogOpen] = useState(false);
+  const [donationAmount, setDonationAmount] = useState("0.01");
+  const [isDonating, setIsDonating] = useState(false);
+  const [donationFeedback, setDonationFeedback] = useState<{
+    error?: string;
+    message?: string;
+    txHash?: string;
+  }>({});
+
+  const resetDonationState = () => {
+    setDonationDialogOpen(false);
+    setDonationAmount("0.01");
+    setIsDonating(false);
+    setDonationFeedback({});
+  };
+
+  const handleDonationDialogToggle = (open: boolean) => {
+    if (!open) {
+      resetDonationState();
+    } else {
+      setDonationDialogOpen(true);
+    }
+  };
+
+  const openDonationDialog = () => {
+    if (!post) return;
+    const donationTarget = post.donationAddress || post.contractAddress;
+    if (!donationTarget) {
+      setDonationFeedback({
+        error: "후원 주소가 등록되지 않은 게시글입니다.",
+      });
+    } else {
+      setDonationFeedback({});
+    }
+    setDonationAmount("0.01");
+    setDonationDialogOpen(true);
+  };
+
+  const handleDonate = async () => {
+    if (!post) return;
+
+    const donationTarget = post.donationAddress || post.contractAddress;
+    if (!donationTarget) {
+      setDonationFeedback({
+        error: "후원 주소가 제공되지 않았습니다.",
+      });
+      return;
+    }
+
+    if (!wallet?.signer) {
+      setDonationFeedback({
+        error: "후원하려면 먼저 지갑을 연결해주세요.",
+      });
+      return;
+    }
+
+    let value: bigint;
+    try {
+      const parsedAmount = donationAmount.trim();
+      if (!parsedAmount) {
+        throw new Error("금액을 입력해주세요.");
+      }
+      value = ethers.parseEther(parsedAmount);
+      if (value <= BigInt(0)) {
+        throw new Error("0보다 큰 금액을 입력해주세요.");
+      }
+    } catch (error: any) {
+      setDonationFeedback({
+        error:
+          error?.message ||
+          "올바른 ETH 금액을 입력했는지 확인해주세요.",
+      });
+      return;
+    }
+
+    setIsDonating(true);
+    setDonationFeedback({});
+
+    try {
+      const tx = await wallet.signer.sendTransaction({
+        to: donationTarget,
+        value,
+      });
+
+      setDonationFeedback({
+        message: "후원 트랜잭션이 전송되었습니다. 완료를 기다려주세요.",
+        txHash: tx.hash,
+      });
+
+      await tx.wait();
+
+      setDonationFeedback({
+        message: "후원이 성공적으로 완료되었습니다!",
+        txHash: tx.hash,
+      });
+    } catch (error: any) {
+      console.error("Donation failed:", error);
+      setDonationFeedback({
+        error:
+          error?.reason ||
+          error?.message ||
+          "후원 트랜잭션이 실패했습니다. 다시 시도해주세요.",
+      });
+    } finally {
+      setIsDonating(false);
+    }
+  };
 
   // 게시물 데이터 로드
   useEffect(() => {
@@ -505,36 +625,37 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
   const donationAddress = post.donationAddress || post.contractAddress;
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
-      {/* Header */}
-      <Header
-        showBackButton={true}
-        backHref="/board/free"
-        rightContent={
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              className={`rounded-xl ${bookmarked ? "text-yellow-400" : ""}`}
-              onClick={() => setBookmarked(!bookmarked)}
-            >
-              <Bookmark className={`h-5 w-5 ${bookmarked ? "fill-current" : ""}`} />
-            </Button>
-            <Button variant="ghost" size="icon" className="rounded-xl">
-              <Share2 className="h-5 w-5" />
-            </Button>
-          </div>
-        }
-      />
+    <>
+      <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
+        {/* Header */}
+        <Header
+          showBackButton={true}
+          backHref="/board/free"
+          rightContent={
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                className={`rounded-xl ${bookmarked ? "text-yellow-400" : ""}`}
+                onClick={() => setBookmarked(!bookmarked)}
+              >
+                <Bookmark className={`h-5 w-5 ${bookmarked ? "fill-current" : ""}`} />
+              </Button>
+              <Button variant="ghost" size="icon" className="rounded-xl">
+                <Share2 className="h-5 w-5" />
+              </Button>
+            </div>
+          }
+        />
 
-      <div className="mx-auto max-w-4xl px-4 py-8">
-        {/* Article Header - Medium Style */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4 }}
-          className="mb-8"
-        >
+        <div className="mx-auto max-w-4xl px-4 py-8">
+          {/* Article Header - Medium Style */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4 }}
+            className="mb-8"
+          >
           <div className="mb-6">
             {likes > 50 && (
               <Badge className="bg-gradient-to-r from-orange-500 to-red-500 text-xs rounded-lg mb-4">
@@ -661,7 +782,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
         >
           <Card className="border border-slate-700 bg-slate-800/50 backdrop-blur">
             <CardContent className="p-4">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div className="flex items-center gap-3">
                   <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center">
                     <Wallet className="h-5 w-5 text-white" />
@@ -671,21 +792,31 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                     <p className="text-xs text-slate-400">Base 토큰으로 후원받을 수 있습니다</p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-mono text-slate-300">
-                    {donationAddress.slice(0, 6)}...{donationAddress.slice(-4)}
-                  </span>
+                <div className="flex flex-col items-start gap-2 md:flex-row md:items-center md:gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-mono text-slate-300">
+                      {donationAddress.slice(0, 6)}...{donationAddress.slice(-4)}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 rounded-lg"
+                      onClick={copyAddress}
+                    >
+                      {copied ? (
+                        <Check className="h-4 w-4 text-green-400" />
+                      ) : (
+                        <Copy className="h-4 w-4 text-slate-400" />
+                      )}
+                    </Button>
+                  </div>
                   <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 rounded-lg"
-                    onClick={copyAddress}
+                    className="gap-2 bg-emerald-500 hover:bg-emerald-600 rounded-xl"
+                    onClick={openDonationDialog}
+                    disabled={!donationAddress}
                   >
-                    {copied ? (
-                      <Check className="h-4 w-4 text-green-400" />
-                    ) : (
-                      <Copy className="h-4 w-4 text-slate-400" />
-                    )}
+                    <Heart className="h-4 w-4" />
+                    후원하기
                   </Button>
                 </div>
               </div>
@@ -748,24 +879,117 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
           </div>
         </motion.div>
 
-        {/* Comments Section Placeholder */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, delay: 0.4 }}
-        >
-          <Card className="border border-slate-700 bg-slate-800/50 backdrop-blur">
-            <CardContent className="p-6">
-              <h3 className="text-xl font-semibold text-slate-100 mb-4">댓글 {comments}개</h3>
-              <div className="text-center py-12 text-slate-400">
-                <MessageSquare className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>댓글 기능은 곧 추가될 예정입니다.</p>
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
+          {/* Comments Section Placeholder */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.4 }}
+          >
+            <Card className="border border-slate-700 bg-slate-800/50 backdrop-blur">
+              <CardContent className="p-6">
+                <h3 className="text-xl font-semibold text-slate-100 mb-4">댓글 {comments}개</h3>
+                <div className="text-center py-12 text-slate-400">
+                  <MessageSquare className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p>댓글 기능은 곧 추가될 예정입니다.</p>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        </div>
       </div>
-    </div>
+
+      <Dialog open={donationDialogOpen} onOpenChange={handleDonationDialogToggle}>
+        <DialogContent className="bg-slate-900 border border-slate-700 text-slate-100">
+          <DialogHeader>
+            <DialogTitle>후원하기</DialogTitle>
+            <DialogDescription className="text-slate-400">
+              게시글 작성자에게 ETH로 후원할 수 있습니다. 네트워크 수수료가 포함될 수 있어요.
+            </DialogDescription>
+          </DialogHeader>
+          {post ? (
+            <div className="space-y-4">
+              <div className="rounded-lg border border-slate-700 bg-slate-800/60 p-3">
+                <p className="text-sm text-slate-300">
+                  <span className="font-semibold text-slate-100">{post.title}</span> 작성자에게 후원합니다.
+                </p>
+                <p className="mt-2 text-xs font-mono text-slate-500 break-all">
+                  {post.donationAddress || post.contractAddress}
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-slate-200">후원 금액 (ETH)</p>
+                <Input
+                  value={donationAmount}
+                  onChange={(event) => setDonationAmount(event.target.value)}
+                  placeholder="0.01"
+                  className="bg-slate-950 border-slate-700 text-slate-100"
+                  disabled={isDonating}
+                />
+                <div className="flex items-center gap-2">
+                  {["0.01", "0.05", "0.1"].map((amount) => (
+                    <Button
+                      key={amount}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="border-slate-700 hover:bg-slate-800"
+                      onClick={() => setDonationAmount(amount)}
+                      disabled={isDonating}
+                    >
+                      {amount} ETH
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
+              {!isConnected && (
+                <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+                  후원하려면 먼저 지갑을 연결해주세요.
+                </div>
+              )}
+
+              {donationFeedback.error && (
+                <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+                  {donationFeedback.error}
+                </div>
+              )}
+
+              {donationFeedback.message && (
+                <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200 space-y-1">
+                  <p>{donationFeedback.message}</p>
+                  {donationFeedback.txHash && (
+                    <p className="break-all font-mono text-xs text-emerald-300">
+                      Tx Hash: {donationFeedback.txHash}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-slate-400">게시글 정보를 불러오는 중입니다...</p>
+          )}
+
+          <DialogFooter className="pt-4">
+            <Button
+              variant="outline"
+              className="border-slate-700 hover:bg-slate-800"
+              onClick={resetDonationState}
+              disabled={isDonating}
+            >
+              취소
+            </Button>
+            <Button
+              className="bg-emerald-500 hover:bg-emerald-600"
+              onClick={handleDonate}
+              disabled={isDonating || !isConnected || !post}
+            >
+              {isDonating ? "후원 전송 중..." : "후원 보내기"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 

@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import {
@@ -33,6 +33,8 @@ import Header from "@/components/Header";
 import ActivityCalendar from "@/components/profile/ActivityCalendar";
 import Timeline from "@/components/profile/Timeline";
 import NFTBadges from "@/components/profile/NFTBadges";
+import { useWallet } from "@/contexts/WalletContext";
+import { getBadgeAddressForNetwork, hasFirstPostBadge } from "@/lib/badgesContract";
 import { cn } from "@/lib/utils";
 
 // --- Demo Data ---
@@ -113,7 +115,7 @@ const demoTimeline = [
   },
 ];
 
-const demoBadges = [
+const badgeTemplates = [
   {
     id: 1,
     name: "First Article",
@@ -143,6 +145,15 @@ const demoBadges = [
   },
   {
     id: 4,
+    name: "First Post",
+    description: "첫 게시글 작성",
+    image: "📝",
+    rarity: "common" as const,
+    earned: false,
+    claimable: false,
+  },
+  {
+    id: 5,
     name: "Top Contributor",
     description: "주간 활동량 1위",
     image: "👑",
@@ -151,7 +162,7 @@ const demoBadges = [
     claimable: true,
   },
   {
-    id: 5,
+    id: 6,
     name: "Security Expert",
     description: "보안 취약점 5개 제보",
     image: "🔒",
@@ -180,9 +191,91 @@ function TierBadge({ tier }: { tier: string }) {
 }
 
 export default function ProfilePage() {
+  const { wallet, isConnected } = useWallet();
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [badgeList, setBadgeList] = useState(badgeTemplates);
+  const [isBadgeLoading, setIsBadgeLoading] = useState(false);
+  const [badgeError, setBadgeError] = useState<string | null>(null);
   const xpProgress = (demoUser.totalXP / demoUser.nextTierXP) * 100;
   const devXPProgress = (demoUser.developerXP / 5000) * 100;
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadBadgeState = async () => {
+      if (!wallet?.provider || !wallet?.address) {
+        if (isMounted) {
+          setBadgeList(
+            badgeTemplates.map((badge) =>
+              badge.id === 4
+                  ? ({ ...badge, earned: false, claimable: isConnected } as typeof badge)
+                : badge
+            )
+          );
+          setBadgeError(null);
+          setIsBadgeLoading(false);
+        }
+        return;
+      }
+
+      setIsBadgeLoading(true);
+      setBadgeError(null);
+
+      try {
+        const badgeAddress = await getBadgeAddressForNetwork(wallet.provider);
+        const hasBadge = await hasFirstPostBadge(
+          wallet.provider,
+          wallet.address,
+          badgeAddress
+        );
+
+        if (!isMounted) return;
+
+        setBadgeList(
+          badgeTemplates.map((badge) => {
+            if (badge.id !== 4) {
+              return badge;
+            }
+
+            if (hasBadge) {
+              return {
+                ...badge,
+                earned: true,
+                claimable: false,
+              } as typeof badge;
+            }
+
+            return {
+              ...badge,
+              earned: false,
+              claimable: true,
+            } as typeof badge;
+          })
+        );
+      } catch (error: any) {
+        console.error("배지 정보를 불러오지 못했습니다:", error);
+        if (!isMounted) return;
+        setBadgeError(error.message || "배지 정보를 불러오지 못했습니다.");
+        setBadgeList(
+          badgeTemplates.map((badge) =>
+            badge.id === 4
+                ? ({ ...badge, earned: false, claimable: false } as typeof badge)
+              : badge
+          )
+        );
+      } finally {
+        if (isMounted) {
+          setIsBadgeLoading(false);
+        }
+      }
+    };
+
+    loadBadgeState();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [wallet?.provider, wallet?.address, isConnected]);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
@@ -410,7 +503,28 @@ export default function ProfilePage() {
           </TabsContent>
 
           <TabsContent value="badges" className="space-y-4">
-            <NFTBadges badges={demoBadges} />
+            {isBadgeLoading && (
+              <Card className="shadow-xl border border-slate-700 bg-slate-800/50 backdrop-blur">
+                <CardContent className="p-4 text-sm text-slate-300">
+                  배지 정보를 불러오는 중입니다...
+                </CardContent>
+              </Card>
+            )}
+            {badgeError && (
+              <Card className="shadow-xl border border-red-500/50 bg-red-950/30">
+                <CardContent className="p-4 text-sm text-red-200">
+                  {badgeError}
+                </CardContent>
+              </Card>
+            )}
+            {!isBadgeLoading && !badgeError && !isConnected && (
+              <Card className="shadow-xl border border-slate-700 bg-slate-800/50 backdrop-blur">
+                <CardContent className="p-4 text-sm text-slate-300">
+                  지갑을 연결하면 획득한 NFT 배지를 확인할 수 있습니다.
+                </CardContent>
+              </Card>
+            )}
+            <NFTBadges badges={badgeList} />
           </TabsContent>
 
           <TabsContent value="stats" className="space-y-4">

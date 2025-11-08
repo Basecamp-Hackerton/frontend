@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import {
@@ -30,25 +30,15 @@ import {
   BookOpen,
   Building2,
   Coins,
+  MessageSquare,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
 import Header from "@/components/Header";
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-} from "recharts";
-
 // --- Demo Data ---
 const demoAnnouncements = [
   { id: 1, title: "[공지] Base Camp 베타 오픈", date: "2025-01-20", type: "공지" },
@@ -77,40 +67,17 @@ const demoRankings = [
   { rank: 5, user: "solidity-cat", level: 35, xp: 9800, change: 2 },
 ];
 
-// price demo series
-function useDemoPrice() {
-  return useMemo(() => {
-    const base = 1.2;
-    const data = [] as { day: string; price: number }[];
-    for (let i = 10; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      const jitter = (Math.sin(i * 1.2) + Math.random() * 0.3) * 0.03;
-      data.push({
-        day: `${d.getMonth() + 1}/${d.getDate()}`,
-        price: Number((base * (1 + jitter)).toFixed(3)),
-      });
-    }
-    return data;
-  }, []);
-}
-
-function useCoinbasePrice() {
-  return useMemo(() => {
-    const base = 42000;
-    const data = [] as { day: string; price: number }[];
-    for (let i = 10; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      const jitter = (Math.sin(i * 0.8) + Math.random() * 0.5) * 0.02;
-      data.push({
-        day: `${d.getMonth() + 1}/${d.getDate()}`,
-        price: Number((base * (1 + jitter)).toFixed(0)),
-      });
-    }
-    return data;
-  }, []);
-}
+const microChatMock = [
+  { avatar: "G7", user: "Guest_7bdd0", time: "12:34", message: "비트 100K 뚫림?" },
+  { avatar: "G7", user: "Guest_776d2", time: "12:33", message: "내가 볼 때 Base가 Layer2 1등임 ㅋㅋ" },
+  { avatar: "아", user: "Bit_God", time: "12:33", message: "비트보단 Base" },
+  { avatar: "G9", user: "Guest_92958", time: "12:32", message: "Base 안쓰면 흑우지? ㅋㅋ" },
+  { avatar: "G7", user: "Guest_776d2", time: "12:31", message: "내가 쓴 Base 글 한 번 봐주세요 https://medium.com/@adamboudj/coinbases-base-future-of-layer-2-solutions-cab52563c6b9" },
+  { avatar: "G3", user: "Guest_3e4a5", time: "12:31", message: "아 배고프다 밥줘" },
+  // { avatar: "G3", user: "Guest_3e4a5", time: "12:30", message: "아" },
+  // { avatar: "G7", user: "Guest_7bdc1", time: "12:30", message: "저메추 부탁. 저메추 부탁. 저메추 부탁. 저메추 부탁. 저메추 부탁." },
+  // { avatar: "G0", user: "Guest_00a22", time: "12:29", message: "ㅇㅅㅇㅅㅎ" },
+];
 
 // --- Layout Component ---
 export default function BaseCampHome() {
@@ -120,8 +87,40 @@ export default function BaseCampHome() {
     game: false,
     security: false,
   });
-  const priceData = useDemoPrice();
-  const coinbaseData = useCoinbasePrice();
+  const tradingViewContainerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!tradingViewContainerRef.current) return;
+    // 이미 위젯이 주입되어 있다면 중복 생성 방지
+    if (tradingViewContainerRef.current.childNodes.length > 0) return;
+
+    const script = document.createElement("script");
+    script.src = "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
+    script.type = "text/javascript";
+    script.async = true;
+    script.innerHTML = JSON.stringify({
+      autosize: true,
+      symbol: "COINBASE:BTCUSD",
+      interval: "60",
+      timezone: "Etc/UTC",
+      theme: "dark",
+      style: "1",
+      locale: "en",
+      allow_symbol_change: true,
+      calendar: false,
+      hide_top_toolbar: false,
+      hide_legend: false,
+      support_host: "https://www.tradingview.com",
+    });
+
+    tradingViewContainerRef.current.appendChild(script);
+
+    return () => {
+      if (tradingViewContainerRef.current) {
+        tradingViewContainerRef.current.innerHTML = "";
+      }
+    };
+  }, []);
 
   const toggleBoard = (board: string) => {
     setExpandedBoards((prev) => ({ ...prev, [board]: !prev[board] }));
@@ -230,17 +229,17 @@ export default function BaseCampHome() {
             </CardHeader>
             <CardContent className="flex flex-col gap-2">
               <ServiceLink href="https://docs.base.org/" label="Docs 및 빌드" />
-              <ServiceLink href="#" label="Play to Earn (Base)" />
-              <ServiceLink href="#" label="거래소" />
-              <ServiceLink href="https://docs.base.org/docs/tools/network-faucets" label="Base Testnet" />
+              <ServiceLink href="https://playtoearn.com/blockchaingames/Base/All-Genre/All-Status/All-Device/All-NFT/All-PlayToEarn/All-FreeToPlay" label="Play to Earn (Base)" />
+              <ServiceLink href="https://www.coinbase.com/" label="거래소" />
+              <ServiceLink href="https://docs.base.org/learn/deployment-to-testnet/test-networks" label="Base Testnet (Docs)" />
               <Separator className="my-1 bg-slate-700" />
               <div className="text-xs font-semibold text-slate-400 mb-1">외부 서비스</div>
-              <ServiceLink href="#" label="BaseName" />
-              <ServiceLink href="#" label="Baseapp SNS" />
-              <ServiceLink href="#" label="Baseapp 인스타" />
-              <ServiceLink href="#" label="Baseapp 그록" />
-              <ServiceLink href="#" label="Baseapp Perpdex" />
-              <ServiceLink href="#" label="Baseapp 예측시장" />
+              <ServiceLink href="https://base.org/names" label="BaseName" />
+              <ServiceLink href="https://farcaster.xyz/" label="Baseapp SNS" />
+              <ServiceLink href="https://zora.co/" label="Baseapp 인스타" />
+              <ServiceLink href="https://bankr.bot/" label="Baseapp 그록" />
+              <ServiceLink href="https://www.avantisfi.com/" label="Baseapp Perpdex" />
+              <ServiceLink href="https://limitless.exchange/" label="Baseapp 예측시장" />
             </CardContent>
           </Card>
         </aside>
@@ -269,6 +268,77 @@ export default function BaseCampHome() {
               </CardContent>
             </Card>
           </motion.div>
+
+          {/* BTC TradingView 차트 & 실시간 채팅 */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.05 }}
+              className="lg:col-span-8"
+            >
+              <Card className="shadow-xl border border-slate-700 bg-slate-800/50 backdrop-blur h-full">
+                <CardHeader className="pb-3">
+                  <CardTitle className="flex items-center gap-2 text-base text-slate-100">
+                    <BarChart3 className="h-5 w-5 text-orange-400" /> BTC 실시간 차트
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-[480px] w-full">
+                    <div
+                      ref={tradingViewContainerRef}
+                      className="tradingview-widget-container h-full w-full rounded-xl overflow-hidden"
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.08 }}
+              className="lg:col-span-4"
+            >
+              <Card className="shadow-xl border border-slate-700 bg-slate-900/60 backdrop-blur h-full flex flex-col rounded-3xl overflow-hidden">
+                <CardHeader className="pb-1 border-b border-slate-800 bg-slate-900/70">
+                  <CardTitle className="flex items-center gap-2 text-sm font-semibold text-slate-100">
+                    <MessageSquare className="h-5 w-5 text-emerald-400" /> 실시간 채팅
+                  </CardTitle>
+                  <p className="text-xs text-slate-500 mt-1">
+                    베이스 캠프 커뮤니티 실시간 톡 (로컬 테스트용)
+                  </p>
+                </CardHeader>
+                <CardContent className="flex-1 flex flex-col gap-3 p-0">
+                  <div className="flex-1 overflow-y-auto space-y-2 px-4 pt-4 pb-2">
+                    {microChatMock.map((chat, idx) => (
+                      <div key={idx} className="flex items-start gap-2 text-xs">
+                        <div className="flex-shrink-0 h-6 w-6 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px] text-slate-300 font-semibold">
+                          {chat.avatar}
+                        </div>
+                        <div className="flex-1 bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2">
+                          <div className="flex items-center justify-between text-[10px] text-slate-400 mb-1">
+                            <span className="font-medium text-emerald-300">@{chat.user}</span>
+                            <span>{chat.time}</span>
+                          </div>
+                          <p className="text-[11px] leading-relaxed text-slate-200">{chat.message}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="border-t border-slate-800 bg-slate-900/70 px-4 py-3 space-y-2">
+                    <Textarea
+                      placeholder="메시지를 입력하세요..."
+                      className="min-h-[70px] bg-slate-900/50 border border-slate-700 text-slate-200 text-xs rounded-xl"
+                    />
+                    <Button className="w-full rounded-xl bg-emerald-500 hover:bg-emerald-600 text-xs py-2">
+                      메시지 보내기
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          </div>
 
           {/* 공지사항 & 최신 게시물 */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -430,56 +500,6 @@ export default function BaseCampHome() {
             </motion.div>
           </div>
 
-          {/* 시세 차트 */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* Base 시세 */}
-            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.3 }}>
-              <Card className="shadow-xl border border-slate-700 bg-slate-800/50 backdrop-blur">
-                <CardHeader className="pb-3">
-                  <CardTitle className="flex items-center gap-2 text-base text-slate-100">
-                    <TrendingUp className="h-5 w-5 text-blue-400" /> Base 시세
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="h-64 w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={priceData} margin={{ top: 10, right: 20, left: 0, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                        <XAxis dataKey="day" stroke="#9ca3af" />
-                        <YAxis domain={["auto", "auto"]} stroke="#9ca3af" />
-                        <Tooltip contentStyle={{ backgroundColor: "#1e293b", border: "1px solid #475569", borderRadius: "0.5rem" }} />
-                        <Line type="monotone" dataKey="price" stroke="#3b82f6" strokeWidth={2} dot={false} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
-
-            {/* Coinbase 시세 */}
-            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.35 }}>
-              <Card className="shadow-xl border border-slate-700 bg-slate-800/50 backdrop-blur">
-                <CardHeader className="pb-3">
-                  <CardTitle className="flex items-center gap-2 text-base text-slate-100">
-                    <BarChart3 className="h-5 w-5 text-orange-400" /> Coinbase 시세
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="h-64 w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={coinbaseData} margin={{ top: 10, right: 20, left: 0, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                        <XAxis dataKey="day" stroke="#9ca3af" />
-                        <YAxis domain={["auto", "auto"]} stroke="#9ca3af" />
-                        <Tooltip contentStyle={{ backgroundColor: "#1e293b", border: "1px solid #475569", borderRadius: "0.5rem" }} />
-                        <Line type="monotone" dataKey="price" stroke="#f97316" strokeWidth={2} dot={false} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
-          </div>
         </main>
       </div>
     </div>

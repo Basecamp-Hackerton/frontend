@@ -37,6 +37,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  claimFirstPostBadge,
+  getBadgeAddressForNetwork,
+  hasFirstPostBadge,
+} from "@/lib/badgesContract";
 
 const categories = [
   { value: "free", label: "자유게시판" },
@@ -171,6 +176,36 @@ export default function WritePostPage() {
     setIsSubmitting(true);
 
     try {
+      let claimedBadge = false;
+      let badgeMintError: string | null = null;
+
+      const provider = wallet?.provider;
+      const signer = wallet?.signer;
+      const walletAddress = wallet?.address;
+
+      if (provider && signer && walletAddress) {
+        try {
+          const badgeAddress = await getBadgeAddressForNetwork(provider);
+          const alreadyHasBadge = await hasFirstPostBadge(
+            provider,
+            walletAddress,
+            badgeAddress
+          );
+
+          if (!alreadyHasBadge) {
+            const tx = await claimFirstPostBadge(signer, badgeAddress);
+            await tx.wait();
+            claimedBadge = true;
+          }
+        } catch (badgeError: any) {
+          console.error("첫 게시글 배지 발급 실패:", badgeError);
+          badgeMintError =
+            badgeError?.reason ||
+            badgeError?.message ||
+            "NFT 배지 발급에 실패했습니다.";
+        }
+      }
+
       // 업로드된 파일들을 Base64로 변환 (실제로는 IPFS나 스토리지 서비스에 업로드)
       const fileData = await Promise.all(
         uploadedFiles.map(async (uploadedFile) => {
@@ -227,6 +262,14 @@ export default function WritePostPage() {
 
       // 게시판 페이지로 이동
       router.push("/board/free");
+
+      if (claimedBadge) {
+        alert("축하합니다! 첫 게시글 NFT 배지를 획득했습니다.");
+      } else if (badgeMintError) {
+        alert(
+          `첫 게시글 NFT 배지를 발급하지 못했습니다.\n사유: ${badgeMintError}\n\nBase Sepolia 네트워크에 연결되어 있고 충분한 ETH가 있는지 확인한 뒤 다시 시도해주세요.`
+        );
+      }
     } catch (error) {
       console.error("게시글 작성 실패:", error);
       alert("게시글 작성에 실패했습니다. 다시 시도해주세요.");
